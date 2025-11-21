@@ -102,7 +102,7 @@ Be aware that jobs can be canceled and requeued by the scheduler or underlying p
 Use `rsync` to copy results from the cluster to your local machine. It is faster and can resume interrupted transfers. Run this on your machine (NOT on Greene):
 
 ```
-rsync -avzP <netid>@dtn.hpc.nyu.edu:/home/<netid>/rob6323_go2_project/logs ./
+rsync -avzP -e 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' <netid>@dtn.hpc.nyu.edu:/home/<netid>/rob6323_go2_project/logs ./
 ```
 
 *Explanation of flags:*
