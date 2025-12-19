@@ -31,9 +31,9 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     debug_vis = True
 
     # Raibert Params
-    raibert_heuristic_reward_scale = -10.0 
+    raibert_heuristic_reward_scale = -10.0
 
-    # Reward scales for non-flat body orientation, bouncing, excess joint vel, body roll and pitching 
+    # Reward scales for non-flat body orientation, bouncing, excess joint vel, body roll and pitching
     orient_reward_scale = -5.0
     lin_vel_z_reward_scale = -0.02
     dof_vel_reward_scale = -0.0001
@@ -42,6 +42,8 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     # Critical rewards for legged locomotion
     feet_clearance_reward_scale = -30.0
     tracking_contacts_shaped_force_reward_scale = 4.0
+
+    pitch_nose_down_reward_scale = -5.0
 
     # simulation
     sim: SimulationCfg = SimulationCfg(
@@ -115,4 +117,8 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     face_command_reward_scale = -5.0 # this isn't really working as intended yet
 
     contact_schedule_reward_scale = -2.0
-    air_time_reward_scale = 0.5
+    air_time_reward_scale = 0.47 
+
+    sym_tem_reward_scale   = 0.2 # 0.05 – 0.2
+    sym_mor_reward_scale   = 0.1 # 0.01 – 0.1
+    sym_total_reward_scale = 1.0 # 1.0

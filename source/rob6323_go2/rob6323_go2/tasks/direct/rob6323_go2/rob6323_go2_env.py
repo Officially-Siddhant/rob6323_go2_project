@@ -52,9 +52,12 @@ class Rob6323Go2Env(DirectRLEnv):
                 "feet_clearance",
                 "tracking_contacts_shaped_force",
                 # "stride_length",
-                # "face_command",
+                "face_command",
                 "contact_schedule",
                 "air_time",
+                "pitch_nose_down",
+                "sym_tem",
+                "sym_mor",
             ]
         }
         # Get specific body indices
@@ -63,6 +66,8 @@ class Rob6323Go2Env(DirectRLEnv):
         # self._undesired_contact_body_ids, _ = self._contact_sensor.find_bodies(".*thigh")
 
         foot_names = ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]
+
+        print("Joint names:", self.robot.joint_names)
 
         # Robot indexing (positions/kinematics)
         self._feet_ids = []
@@ -107,6 +112,41 @@ class Rob6323Go2Env(DirectRLEnv):
         self.feet_swing_time = torch.zeros(self.num_envs, 4, device=self.device)  # seconds
         self.prev_contact = torch.zeros(self.num_envs, 4, dtype=torch.bool, device=self.device)
         self.contacts_touchdown = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device)
+
+        # ----------------------------
+        # Symmetry reward (paper-style)
+        # ----------------------------
+
+        # --- fixed (for feasibility testing; you can tune later)
+        self._beta = 0.5                  # duty factor β (stance fraction)
+        self._eps_sigma = 0.10            # εσ threshold for "same-phase" pairing
+        self._w_tem = 0.15                # paper coefficient (you can move to cfg)
+        self._w_mor = 0.15
+
+        # phase offsets θ_i for your foot order: [FL, FR, RL, RR]
+        # Example (trot-ish): FL & RR in-phase, FR & RL in-phase (offset by 0.5)
+        self._theta = torch.tensor([0.0, 0.5, 0.5, 0.0], device=self.device).unsqueeze(0)  # (1,4)
+
+        # For foot velocity if body_lin_vel_w isn't available (finite difference fallback)
+        self._prev_foot_pos_w = torch.zeros(self.num_envs, 4, 3, device=self.device)
+
+        # --- joint indices per leg (hip, thigh, calf) for morphological symmetry
+        # IMPORTANT: joint names may differ in your Go2 asset; adjust these strings if needed.
+        leg_names = ["FL", "FR", "RL", "RR"]
+        joint_triplets = []
+        for leg in leg_names:
+            hip_ids, _ = self.robot.find_joints(f"{leg}_hip_joint")
+            thigh_ids, _ = self.robot.find_joints(f"{leg}_thigh_joint")
+            calf_ids, _ = self.robot.find_joints(f"{leg}_calf_joint")
+            joint_triplets.append([hip_ids[0], thigh_ids[0], calf_ids[0]])
+
+        # shape: (4 legs, 3 joints)
+        self._leg_joint_ids = torch.tensor(joint_triplets, device=self.device, dtype=torch.long)
+
+        # For temporal symmetry reward
+        self._k_f = 2e-4   # start softer than 0.001
+        self._k_v = 0.5    # start softer than 2.0
+
 
     def _setup_scene(self):
         self.robot = Articulation(self.cfg.robot_cfg)
@@ -206,25 +246,33 @@ class Rob6323Go2Env(DirectRLEnv):
         self.last_actions[:, :, 0] = self._actions[:]
 
         self._step_contact_targets()
+
+        # Updating foot contact timing
         self._update_foot_contact_timing()
+        # Calculating air time before
+        rew_air_time = self._reward_air_time()
 
         rew_contact_schedule = self._reward_contact_schedule_tracking()
-        rew_air_time = self._reward_air_time()
 
         # -----------------------------
         # Raibert heuristic penalty
         # -----------------------------
-        self._step_contact_targets()  # Update gait state
         rew_raibert_heuristic = self._reward_raibert_heuristic()
 
         # Foot clearance penalty (swing feet should lift)
         rew_feet_clearance = self._reward_feet_clearance()
 
         # Stride length penalty (swing feet should move forward appropriately)
-        rew_stride = self._reward_stride_length()
+        # rew_stride = self._reward_stride_length()
 
         # Face command reward (robot should face the commanded heading)
         rew_face_cmd = self._reward_face_command()
+
+        # 2. Add a specific "Keep Head Up" penalty
+        # The existing 'orient' reward penalizes ANY tilt (left/right or up/down).
+        # This new term SPECIFICALLY penalizes 'nose down' (positive X-gravity projection).
+        # projected_gravity_b[:, 0] > 0 corresponds to pitching down.
+        rew_pitch_nose_down = torch.clamp(self.robot.data.projected_gravity_b[:, 0], min=0.0) ** 2
 
         # Contact force tracking reward (stance feet should load, swing feet should unload)
         rew_contact_forces = self._reward_tracking_contacts_shaped_force()
@@ -249,6 +297,10 @@ class Rob6323Go2Env(DirectRLEnv):
         # Hint: Sum the squares of the X and Y components of the base angular velocity.
         rew_ang_vel_xy = torch.sum(torch.square(self.robot.data.root_ang_vel_b[:, 0:2]), dim=1)
 
+        # Symmetry rewards
+        rew_sym_tem = self._reward_sym_temporal()
+        rew_sym_mor = self._reward_sym_morphological()
+
         rewards = {
             "track_lin_vel_xy_exp": lin_vel_error_mapped * self.cfg.lin_vel_reward_scale,
             "track_ang_vel_z_exp": yaw_rate_error_mapped * self.cfg.yaw_rate_reward_scale,
@@ -261,9 +313,12 @@ class Rob6323Go2Env(DirectRLEnv):
             "feet_clearance": rew_feet_clearance * self.cfg.feet_clearance_reward_scale,
             "tracking_contacts_shaped_force": rew_contact_forces * self.cfg.tracking_contacts_shaped_force_reward_scale,
             # "stride_length": rew_stride * self.cfg.stride_length_reward_scale,
-            # "face_command": rew_face_cmd * self.cfg.face_command_reward_scale,
+            "face_command": rew_face_cmd * self.cfg.face_command_reward_scale,
             "contact_schedule": rew_contact_schedule * self.cfg.contact_schedule_reward_scale,
             "air_time": rew_air_time * self.cfg.air_time_reward_scale,
+            "pitch_nose_down": rew_pitch_nose_down * self.cfg.pitch_nose_down_reward_scale,
+            "sym_tem": rew_sym_tem * self.cfg.sym_tem_reward_scale,
+            "sym_mor": rew_sym_mor * self.cfg.sym_mor_reward_scale,
         }
 
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
@@ -332,6 +387,9 @@ class Rob6323Go2Env(DirectRLEnv):
 
         # Reset raibert quantity
         self.gait_indices[env_ids] = 0
+
+        # Reset foot position buffer for symmetry reward
+        self._prev_foot_pos_w[env_ids] = self.foot_positions_w[env_ids]
 
     def _set_debug_vis_impl(self, debug_vis: bool):
         # set visibility of markers
@@ -669,7 +727,7 @@ class Rob6323Go2Env(DirectRLEnv):
 
         # update prev
         self.prev_contact[:] = contact
-
+    
     def _reward_contact_schedule_tracking(self) -> torch.Tensor:
         """
         Penalize mismatch between desired_contact_states (0..1) and measured contact (0/1).
@@ -688,4 +746,116 @@ class Rob6323Go2Env(DirectRLEnv):
         Reward longer swing durations, but only when a touchdown happens.
         Returns (num_envs,) reward (can be positive).
         """
-        return torch.sum((self.feet_swing_time - 0.25) * self.contacts_touchdown, dim=1)
+        # Get current contact status directly from sensors
+        forces_w = self._contact_sensor.data.net_forces_w[:, self._feet_ids_sensor, :]
+        contact = torch.linalg.norm(forces_w, dim=-1) > 1.0  # (N,4) bool
+
+        # Detect landing: Currently touching ground AND wasn't touching previously
+        # We use self.prev_contact because it hasn't been updated yet!
+        first_contact = contact & (~self.prev_contact)
+
+        # Reward accumulated time for the feet that just landed
+        return torch.sum((self.feet_swing_time - 0.25) * first_contact.float(), dim=1)
+
+    
+    def _leg_phase_time_reversal(self) -> torch.Tensor:
+        """
+        Implements paper's time-reversal phase remapping:
+          φ_i = (φ + θ_i) mod 1            if v_x_cmd >= 0
+          φ_i = -(φ + θ_i) mod 1           if v_x_cmd < 0
+        where φ is the global gait phase in [0,1).
+        """
+        phi = self.gait_indices.unsqueeze(1)              # (N,1)
+        phi_i = torch.remainder(phi + self._theta, 1.0)   # (N,4)
+
+        backward = (self._commands[:, 0:1] < 0.0)         # (N,1) bool
+        # "−(φ+θ) mod 1" is equivalent to remainder( -(...), 1 )
+        phi_i_back = torch.remainder(-phi_i, 1.0)
+
+        return torch.where(backward, phi_i_back, phi_i)
+
+    def _stance_swing_indicators(self, phi_i: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns (I_stance, I_swing) in {0,1} using duty factor β:
+          stance if φ_i < β else swing
+        """
+        I_stance = (phi_i < self._beta).float()
+        I_swing = 1.0 - I_stance
+        return I_stance, I_swing
+
+    def _reward_sym_temporal(self) -> torch.Tensor:
+        """
+        Paper-style temporal symmetry term:
+        R_tem = -0.15 * sum_i ( E[I_swing(φ_i)](1-exp(-0.001||f_i||))
+                             + E[I_stance(φ_i)](1-exp(-2||v_i||)) )
+        Here:
+          f_i = GRF magnitude for leg i (from ContactSensor net forces)
+          v_i = foot speed magnitude (from body lin vel if available; else finite diff)
+        """
+        # time-reversal phase remap + stance/swing indicators
+        # phi_i = self._leg_phase_time_reversal()                 # (N,4)
+        # I_stance, I_swing = self._stance_swing_indicators(phi_i)
+
+        I_stance = self.desired_contact_states                      # (N,4) in [0,1]
+        I_swing  = 1.0 - self.desired_contact_states
+
+
+        # --- GRF magnitude (N,4)
+        forces_w = self._contact_sensor.data.net_forces_w[:, self._feet_ids_sensor, :]  # (N,4,3)
+        f_mag = torch.linalg.norm(forces_w, dim=-1)
+
+        # --- foot speed magnitude (N,4)
+        if hasattr(self.robot.data, "body_lin_vel_w"):
+            foot_vel_w = self.robot.data.body_lin_vel_w[:, self._feet_ids, :]           # (N,4,3)
+            v_mag = torch.linalg.norm(foot_vel_w, dim=-1)
+        else:
+            # fallback: finite-difference foot positions
+            foot_pos = self.foot_positions_w                                        # (N,4,3)
+            foot_vel = (foot_pos - self._prev_foot_pos_w) / max(self.step_dt, 1e-6)
+            self._prev_foot_pos_w[:] = foot_pos
+            v_mag = torch.linalg.norm(foot_vel, dim=-1)
+
+        # term_swing = I_swing * (1.0 - torch.exp(-0.001 * f_mag))
+        # term_stance = I_stance * (1.0 - torch.exp(-2.0 * v_mag))
+
+        term_swing  = I_swing  * (1.0 - torch.exp(-self._k_f * f_mag))
+        term_stance = I_stance * (1.0 - torch.exp(-self._k_v * v_mag))
+
+        return -self._w_tem * torch.sum(term_swing + term_stance, dim=1)   # (N,)
+
+    def _reward_sym_morphological(self) -> torch.Tensor:
+        """
+        Paper-style morphological symmetry term:
+        R_mor = -0.15 * (1 - exp(-5 * d(Gσ)))
+        d(Gσ) = sum_{(i,j) in Gσ} f(σ(i,j)) * sum_{k in {hip,thigh,calf}} |q_{i,k} - q_{j,k}|
+        f(σ(i,j)) = 1 if |θ_i - θ_j| <= εσ else 0
+
+        We use fixed candidate symmetric pairs; gating decides if they're "active".
+        """
+        # joint positions (N,12)
+        q = self.robot.data.joint_pos
+
+        # gather per-leg joint vectors (N,4,3): [hip, thigh, calf] for each leg
+        # self._leg_joint_ids: (4,3)
+        q_leg = q[:, self._leg_joint_ids]   # (N,4,3)
+
+        # candidate symmetry graph pairs (choose a simple set)
+        # diagonal pairs: (FL,RR) and (FR,RL)
+        pairs = [(0, 3), (1, 2)]
+
+        # gate f(σ(i,j)) using |θ_i - θ_j| <= εσ (wrap-aware in [0,1))
+        theta = self._theta  # (1,4)
+        d = torch.zeros(self.num_envs, device=self.device)
+
+        for (i, j) in pairs:
+            dtheta = torch.abs(theta[:, i] - theta[:, j])        # (1,)
+            dtheta = torch.minimum(dtheta, 1.0 - dtheta)         # wrap on circle
+            gate = (dtheta <= self._eps_sigma).float()           # (1,)
+            gate = gate.expand(self.num_envs)                    # (N,)
+
+            diff = torch.abs(q_leg[:, i, :] - q_leg[:, j, :])    # (N,3)
+            d += gate * torch.sum(diff, dim=1)
+
+        return -self._w_mor * (1.0 - torch.exp(-5.0 * d))        # (N,)
+
+    
