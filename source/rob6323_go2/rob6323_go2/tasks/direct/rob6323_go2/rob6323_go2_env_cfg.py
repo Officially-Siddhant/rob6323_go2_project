@@ -31,15 +31,13 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     debug_vis = True
 
     # Raibert Params
-    raibert_heuristic_reward_scale = -10.0
-    feet_clearance_reward_scale = -30.0
-    tracking_contacts_shaped_force_reward_scale = 4.0
+    raibert_heuristic_reward_scale = -10.0 
 
     # Reward scales for non-flat body orientation, bouncing, excess joint vel, body roll and pitching 
     orient_reward_scale = -5.0
     lin_vel_z_reward_scale = -0.02
     dof_vel_reward_scale = -0.0001
-    ang_vel_xy_reward_scale = -0.001
+    ang_vel_xy_reward_scale = -0.01 #-0.0001
 
     # Critical rewards for legged locomotion
     feet_clearance_reward_scale = -30.0
@@ -112,3 +110,9 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
     yaw_rate_reward_scale = 0.5
 
     base_height_min = 0.20 # Terminate if base is lower than 20cm
+
+    stride_length_reward_scale = -2.0 # seems insignificant right now
+    face_command_reward_scale = -5.0 # this isn't really working as intended yet
+
+    contact_schedule_reward_scale = -2.0
+    air_time_reward_scale = 0.5
