@@ -35,19 +35,17 @@ The baseline environment (`Rob6323Go2Env`) implements:
 This baseline serves as a clean reference point for all modifications.
 
 
-## 2. Major Changes Overview
+# Major Changes Overview
 
 Below is summary of the changes
 
-
-
-## 3. Explicit Torque Control with Custom PD
+### 1. Explicit Torque Control with Custom PD
 
 **What changed**
 
 * Disabled Isaac Lab’s built-in joint PD gains
 * Implemented explicit torque control:
-  [ \tau = K_p (q_d - q) - K_d \dot{q} ]
+  $$tau = K_p (q_d - q) - K_d \dot{q} $$
 * Applied torques directly via `set_joint_effort_target`
 
 **Why**
@@ -63,7 +61,7 @@ Below is summary of the changes
 
 ---
 
-## 4. Actuator Friction Model (New File)
+### 2. Actuator Friction Model (New File)
 
 **What changed**
 
@@ -83,7 +81,7 @@ Below is summary of the changes
 
 ---
 
-## 5. Expanded Observation Space (Gait-Aware)
+### 3. Expanded Observation Space (Gait-Aware)
 
 **What changed**
 
@@ -101,7 +99,7 @@ Below is summary of the changes
 
 ---
 
-## 6. Contact Sensor Integration
+### 4. Contact Sensor Integration
 
 **What changed**
 
@@ -121,7 +119,7 @@ Below is summary of the changes
 
 ---
 
-## 7. Gait Phase & Contact Scheduling
+### 5. Gait Phase & Contact Scheduling
 
 **What changed**
 
@@ -141,7 +139,7 @@ Below is summary of the changes
 
 ---
 
-## 8. Raibert Heuristic Reward
+### 6. Raibert Heuristic Reward
 
 **What changed**
 
@@ -159,7 +157,7 @@ Below is summary of the changes
 
 ---
 
-## 9. Contact-Consistent Force Shaping
+### 7. Contact-Consistent Force Shaping
 
 **What changed**
 
@@ -178,7 +176,7 @@ Below is summary of the changes
 
 ---
 
-## 10. Feet Clearance & Airtime Rewards
+### 8. Feet Clearance & Airtime Rewards
 
 **What changed**
 
@@ -197,7 +195,7 @@ Below is summary of the changes
 
 ---
 
-## 11. Orientation & Motion Regularization
+### 9. Orientation & Motion Regularization
 
 **What changed**
 
@@ -219,9 +217,9 @@ Below is summary of the changes
 
 ---
 
-## 12. Symmetry Rewards (Advanced)
+### 10. Symmetry Rewards (Advanced)
 
-### 12.1 Temporal Symmetry
+#### 10.1 Temporal Symmetry
 
 **What**
 
@@ -237,7 +235,7 @@ Below is summary of the changes
 
 * `_reward_sym_temporal()`
 
-### 12.2 Morphological Symmetry
+#### 10.2 Morphological Symmetry
 
 **What**
 
@@ -255,7 +253,7 @@ Below is summary of the changes
 
 ---
 
-## 13. Termination Conditions
+### 11. Termination Conditions
 
 **Added**
 
@@ -271,7 +269,7 @@ Below is summary of the changes
 
 ---
 
-## 14. Configuration Changes Summary
+### 12. Configuration Changes Summary
 
 Key additions in `final_cfg.py`:
 
@@ -293,7 +291,7 @@ Ensure Isaac Lab is installed and sourced correctly.
 (Exact command depends on your Isaac Lab training entrypoint.)
 
 
-### 15. Debug Visualization
+### 13. Debug Visualization
 
 
 You will see:
@@ -303,7 +301,7 @@ You will see:
 
 ---
 
-## 16. Expected Outcomes
+## 14. Expected Outcomes
 
 Compared to the baseline, this implementation:
 
@@ -314,7 +312,7 @@ Compared to the baseline, this implementation:
 
 ---
 
-## 17. Acknowledgements
+## 15. Acknowledgements
 
 * Isaac Lab Project Developers
 * Unitree GO2 model
@@ -322,4 +320,3 @@ Compared to the baseline, this implementation:
 * Symmetry-based locomotion literature
 
 ---
-

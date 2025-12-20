@@ -506,8 +506,8 @@ class Rob6323Go2Env(DirectRLEnv):
         self.desired_contact_states[:, 2] = smoothing_multiplier_RL
         self.desired_contact_states[:, 3] = smoothing_multiplier_RR
 
-    # Raibert Heuristic
 
+    # Raibert Heuristic
     def _reward_raibert_heuristic(self):
         cur_footsteps_translated = self.foot_positions_w - self.robot.data.root_pos_w.unsqueeze(1)
         footsteps_in_body_frame = torch.zeros(self.num_envs, 4, 3, device=self.device)
@@ -573,9 +573,6 @@ class Rob6323Go2Env(DirectRLEnv):
         # only care during swing (desired_contact_states ~1 in stance)
         swing = 1.0 - self.desired_contact_states
 
-        # err = target_z - foot_z
-        # err = torch.clamp(target_z - foot_z, min=0.0)
-
         # penalize low more than high, but don't ignore high entirely
         low_err = torch.clamp(target_z - foot_z, min=0.0)
         high_err = torch.clamp(foot_z - (target_z + 0.03), min=0.0)  # 3cm headroom
@@ -602,8 +599,8 @@ class Rob6323Go2Env(DirectRLEnv):
         # smooth "contact present" in [0,1]
         contact_present = 1.0 - torch.exp(-(foot_force_mag / f_scale) ** 2)
 
-        # stance: want contact_present -> 1
-        # swing:  want contact_present -> 0
+        # stance: want contact_present = 1
+        # swing:  want contact_present = 0
         per_foot = c_des * contact_present + (1.0 - c_des) * (1.0 - contact_present)
 
         # sum over feet -> (num_envs,)
@@ -643,9 +640,6 @@ class Rob6323Go2Env(DirectRLEnv):
         stride_min = 0.03  # m
         stride_max = 0.12  # m
         stride = stride_min + (stride_max - stride_min) * speed  
-
-        # nominal stance x targets (FR, FL, RR, RL) matching your Raibert ordering
-        # If your foot ordering is [FL, FR, RL, RR], swap this array accordingly.
         x_nom = torch.tensor([0.225, 0.225, -0.225, -0.225], device=self.device).unsqueeze(0)  
 
         # aim for forward peak during swing; sign uses commanded forward component
@@ -730,8 +724,7 @@ class Rob6323Go2Env(DirectRLEnv):
         forces_w = self._contact_sensor.data.net_forces_w[:, self._feet_ids_sensor, :]
         contact = torch.linalg.norm(forces_w, dim=-1) > 1.0  
 
-        # Detect landing: Currently touching ground AND wasn't touching previously
-        # We use self.prev_contact because it hasn't been updated yet!
+        # Detect landing: We use self.prev_contact because it hasn't been updated yet!
         first_contact = contact & (~self.prev_contact)
 
         # Reward accumulated time for the feet that just landed
