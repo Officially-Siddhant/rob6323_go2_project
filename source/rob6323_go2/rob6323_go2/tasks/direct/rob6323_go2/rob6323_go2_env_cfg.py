@@ -45,7 +45,7 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
 
     pitch_nose_down_reward_scale = -5.0
 
-    # simulation
+    # Simulation
     sim: SimulationCfg = SimulationCfg(
         dt=1 / 200,
         render_interval=decimation,
@@ -113,12 +113,18 @@ class Rob6323Go2EnvCfg(DirectRLEnvCfg):
 
     base_height_min = 0.20 # Terminate if base is lower than 20cm
 
-    stride_length_reward_scale = -2.0 # seems insignificant right now
-    face_command_reward_scale = -5.0 # this isn't really working as intended yet
+    stride_length_reward_scale = -2.0 
+    face_command_reward_scale = -5.0
 
     contact_schedule_reward_scale = -2.0
-    air_time_reward_scale = 0.47 
+    air_time_reward_scale = 0.47
 
     sym_tem_reward_scale   = 0.2 # 0.05 – 0.2
     sym_mor_reward_scale   = 0.1 # 0.01 – 0.1
     sym_total_reward_scale = 1.0 # 1.0
+
+    # Actuator friction randomization
+    friction_mu_v_range = (0.0, 0.3)
+    friction_Fs_range   = (0.0, 2.5)
+    friction_vel_scale  = 0.1   # tanh(qdot / friction_vel_scale)
+    enable_friction     = True
